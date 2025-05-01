@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+body{
+  cursor:url('./assets/arrowhead-1.cur'),auto;
+}
+.root{
+  padding:0;
+  scroll-behavior: smooth;
+}

@@ -1,0 +1,20 @@
+@import url('https://fonts.googleapis.com/css2?family=Bruno+Ace+SC&display=swap');
+.root{
+  padding:0;
+  scroll-behavior: smooth;
+}
+
+#demo{
+  font-family:'Bruno Ace SC', cursive;
+}
+
+
+#op2{
+  font-family:'Bruno Ace SC', cursive;
+}
+#op3{
+  font-family:'Bruno Ace SC', cursive;
+}
+#Enhance{
+  font-family:'Bruno Ace SC', cursive;
+}
