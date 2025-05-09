@@ -12,6 +12,7 @@ Built on a custom **CNN U-Net architecture**, it transforms low-quality or noisy
 - ⚡ **Real-time Processing** – Experience near-instant enhancement after upload.
 - 🔍 **Interactive Comparison** – Side-by-side view of original vs enhanced images.
 - 🧃 **Batch Processing** – Upload and enhance multiple images in one go (Pro version).
+- 📝 **Suggestions System** – Integrated feedback form with backend storage for user suggestions.
 
 ---
 
@@ -31,13 +32,19 @@ Built on a custom **CNN U-Net architecture**, it transforms low-quality or noisy
 - `NumPy` – Numerical computation  
 - `Pillow` – Image handling  
 - `OpenCV` – Vision-based transformations
+- `SQLite` – Lightweight database for suggestions storage
 
-🏗️ Architecture
+---
+
+## 🏗️ Architecture
+
+```
 XEnhance/
 ├── client/                 # React frontend
 │   ├── public/             # Static assets
 │   └── src/
 │       ├── components/     # React components
+│       │   └── Suggestions.jsx  # User feedback component
 │       ├── hooks/          # Custom React hooks
 │       ├── pages/          # Application pages
 │       ├── services/       # API integration
@@ -48,7 +55,12 @@ XEnhance/
 │   │   └── weights/        # Trained model weights
 │   ├── routes/             # API endpoints
 │   ├── services/           # Business logic
-│   └── utils/              # Helper functions
+│   ├── utils/              # Helper functions
+│   └── main.py             # FastAPI application entry point
+├── suggestions_api/        # Dedicated API for suggestions
+│   ├── main.py             # Suggestions API endpoints
+│   ├── requirements.txt    # Dependencies
+│   └── suggestions.db      # SQLite database (created on first run)
 ├── uploads/                # Temporary image storage
 ├── outputs/                # Processed results
 ├── tests/                  # Test suite
@@ -57,10 +69,13 @@ XEnhance/
 ├── docker-compose.yml      # Container orchestration
 ├── .github/                # GitHub workflows
 └── README.md
+```
 
 ---
 
 ## 🧪 How It Works
+
+### Image Enhancement
 
 > Upload → Enhance → Compare
 
@@ -70,11 +85,26 @@ XEnhance/
 4. 🪄 **Post-processing**: Fine-tuning for optimal clarity  
 5. 📤 **Result**: Delivered with original side-by-side
 
+### Suggestions System
+
+> Fill Form → Submit → Store
+
+1. 📝 **User Input**: Collect user feedback through intuitive form
+2. ✅ **Validation**: Client-side and server-side validation
+3. 💾 **Storage**: Data securely stored in SQLite database
+4. 📊 **Admin Access**: Backend API to retrieve all suggestions
+
 ---
 
 ## 📦 Installation
 
-### 🔧 Backend (FastAPI)
+### Prerequisites
+
+- Python 3.8+
+- Node.js 14+
+- npm or yarn
+
+### 🔧 Backend (Image Enhancement)
 
 ```bash
 git clone https://github.com/yourusername/xenhance.git
@@ -85,18 +115,40 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 
 pip install -r requirements.txt
 uvicorn main:app --reload
+```
 
+### 🔧 Backend (Suggestions API)
 
-📦 Installation
-Prerequisites
+```bash
+cd xenhance/suggestions_api
 
-Python 3.8+
-Node.js 14+
-npm or yarn
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-```🔧 Model Configuration
-The CNN U-Net architecture can be fine-tuned via server/config.json:
-json{
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8001
+```
+
+### 🖥️ Frontend
+
+```bash
+cd xenhance/client
+npm install
+npm start
+```
+
+---
+
+## 🧠 CNN Model Details
+
+The image enhancement feature utilizes a CNN U-Net architecture specifically designed for image restoration tasks. This deep learning model has been trained on thousands of image pairs to learn optimal enhancement patterns.
+
+### 🔧 Model Configuration
+
+The CNN U-Net architecture can be fine-tuned via `server/config.json`:
+
+```json
+{
   "model": {
     "input_shape": [256, 256, 3],
     "filters_base": 64,
@@ -108,5 +160,54 @@ json{
     "epochs": 100,
     "learning_rate": 0.001
   }
-}```
+}
+```
 
+---
+
+## 📝 Suggestions API
+
+The suggestions system allows users to provide feedback, ask questions, or make feature requests. The API stores this information in a SQLite database.
+
+### API Endpoints
+
+- **POST /api/suggestions/** - Submit a new suggestion
+- **GET /api/suggestions/** - Retrieve all suggestions (admin access)
+
+### Data Model
+
+The suggestion form collects:
+- First Name
+- Last Name
+- Email
+- Phone Number
+- Suggestion text
+
+All data is validated both on the client and server side before storage.
+
+---
+
+## 🚀 Development Notes
+
+### CORS Configuration
+
+For development, the CORS settings allow requests from any origin. For production deployment, update the CORS configuration in `suggestions_api/main.py`:
+
+```python
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://your-production-domain.com"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+### Security Considerations
+
+For production deployment:
+- Add authentication for admin endpoints
+- Use environment variables for configuration
+- Implement rate limiting
+- Configure HTTPS
+- Consider data privacy regulations compliance
