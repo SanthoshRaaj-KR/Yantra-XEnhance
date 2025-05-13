@@ -6,121 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 import tensorflow as tf
-import torch
-import torch.nn as nn
 import numpy as np
 import cv2
 import sqlite3
 from datetime import datetime
-
-# Define PyTorch model architecture that matches the saved weights (ResNet8)
-class XRayNoiseClassifier(nn.Module):
-    def __init__(self):
-        super(XRayNoiseClassifier, self).__init__()
-        # ResNet-like structure
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        
-        # Layer 1 blocks
-        self.layer1 = nn.Sequential(
-            # Block 1.0
-            ResNetBlock(64, 64),
-            # Block 1.1
-            ResNetBlock(64, 64)
-        )
-        
-        # Layer 2 blocks
-        self.layer2 = nn.Sequential(
-            # Block 2.0 with downsample
-            ResNetBlock(64, 128, stride=2, downsample=True),
-            # Block 2.1
-            ResNetBlock(128, 128)
-        )
-        
-        # Layer 3 blocks
-        self.layer3 = nn.Sequential(
-            # Block 3.0 with downsample
-            ResNetBlock(128, 256, stride=2, downsample=True),
-            # Block 3.1
-            ResNetBlock(256, 256)
-        )
-        
-        # Layer 4 blocks
-        self.layer4 = nn.Sequential(
-            # Block 4.0 with downsample
-            ResNetBlock(256, 512, stride=2, downsample=True),
-            # Block 4.1
-            ResNetBlock(512, 512)
-        )
-        
-        # Fully connected layer
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512, 4)  # 4 classes: gaussian, poisson, salt_pepper, speckle
-        
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        
-        # Global average pooling and classification
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
-        
-        return x
-
-# ResNet basic block with proper naming
-class ResNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, stride=1, downsample=False):
-        super(ResNetBlock, self).__init__()
-        
-        # First convolutional layer
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
-                               stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        
-        # Second convolutional layer
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
-                               stride=1, padding=1, bias=False)  
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        
-        # Downsample if needed (when stride > 1 or channels change)
-        self.downsample = None
-        if downsample:
-            self.downsample = nn.Sequential(
-                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(out_channels)
-            )
-            
-        self.relu = nn.ReLU(inplace=True)
-        
-    def forward(self, x):
-        identity = x
-        
-        # Forward pass through first conv block
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        
-        # Forward pass through second conv block
-        out = self.conv2(out)
-        out = self.bn2(out)
-        
-        # Apply downsample if needed
-        if self.downsample is not None:
-            identity = self.downsample(x)
-        
-        # Add residual connection
-        out += identity
-        out = self.relu(out)
-        
-        return out
 
 app = FastAPI(title="X-Ray Image Denoiser & Suggestions", 
               description="API for X-Ray Image Denoising and Form Submissions")
@@ -128,7 +17,7 @@ app = FastAPI(title="X-Ray Image Denoiser & Suggestions",
 # Add CORS middleware to allow requests from your frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins during development
+    allow_origins=["http://localhost:5173"],  # Allow all origins during development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -141,15 +30,9 @@ os.makedirs("outputs", exist_ok=True)
 
 # Load pre-trained models
 try:
-    # Initialize the noise classifier model
-    noise_classifier = XRayNoiseClassifier()
-
-    # Load the model weights
-    noise_classifier.load_state_dict(torch.load('model/xray_noise_classifier.pth', map_location=torch.device('cpu')))
+    # Load Keras ResNet50V2 classification model instead of PyTorch model
+    noise_classifier = tf.keras.models.load_model('model/xray_noise_classifier_resnet50v2.keras')
     
-    # Set the model to evaluation mode
-    noise_classifier.eval()
-
     # Load Keras denoising models
     gaussian_denoiser = tf.keras.models.load_model('model/gaussian_denoiser_final_model.keras')
     poisson_denoiser = tf.keras.models.load_model('model/poisson_denoising.keras')
@@ -229,53 +112,56 @@ def preprocess_image(image_path, target_size=(256, 256)):
     """
     Preprocess the image for model input
     """
-    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    if img is None:
-        raise HTTPException(status_code=500, detail="Failed to read image file")
-        
-    img = cv2.resize(img, target_size)
+    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # <-- read directly as grayscale
+    img = cv2.resize(img, (256, 256))  # if needed
     img = img.astype('float32') / 255.0
-    img = np.expand_dims(img, axis=-1)  # Add channel dimension
-    img = np.expand_dims(img, axis=0)    # Add batch dimension
+    img = np.expand_dims(img, axis=-1)   # shape: (256, 256, 1)
+    img = np.expand_dims(img, axis=0)  
     return img
 
-def classify_noise_type(image_path):
+def preprocess_for_classification(image_path, target_size=(224, 224)):
     """
-    Classify the type of noise in the image using PyTorch model
+    Preprocess image for the ResNet50V2 classification model
+    ResNet50V2 typically expects 224x224 RGB images
     """
-    if noise_classifier is None:
-        raise HTTPException(status_code=500, detail="Noise classifier model not loaded")
-    
     # Read image
     img = cv2.imread(image_path)
     if img is None:
         raise HTTPException(status_code=500, detail="Failed to read image file")
     
-    # Ensure we have a 3-channel image for the ResNet model
+    # Ensure we have a 3-channel image for ResNet50V2
     if len(img.shape) == 2:  # If grayscale
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
     elif img.shape[2] == 1:
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
     
-    # Resize to 256x256
-    img = cv2.resize(img, (256, 256))
+    # Resize to expected input size for ResNet50V2 (typically 224x224)
+    img = cv2.resize(img, target_size)
     
-    # Normalize to [0, 1]
+    # Convert to float32 and normalize
     img = img.astype('float32') / 255.0
     
-    # Transpose from HWC to CHW (height, width, channels) -> (channels, height, width)
-    img = img.transpose(2, 0, 1)
+    # Add batch dimension
+    img = np.expand_dims(img, axis=0)
     
-    # Convert to PyTorch tensor
-    img_tensor = torch.FloatTensor(img).unsqueeze(0)  # Add batch dimension
+    return img
+
+def classify_noise_type(image_path):
+    """
+    Classify the type of noise in the image using Keras ResNet50V2 model
+    """
+    if noise_classifier is None:
+        raise HTTPException(status_code=500, detail="Noise classifier model not loaded")
+    
+    # Preprocess the image for Keras ResNet50V2
+    img = preprocess_for_classification(image_path)
     
     # Perform inference
-    with torch.no_grad():
-        predictions = noise_classifier(img_tensor)
+    predictions = noise_classifier.predict(img)
     
     # Get the predicted class
     noise_classes = ['gaussian', 'poisson', 'salt_pepper', 'speckle']
-    predicted_class_index = torch.argmax(predictions).item()
+    predicted_class_index = np.argmax(predictions[0])
     predicted_class = noise_classes[predicted_class_index]
     
     return predicted_class
